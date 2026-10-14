@@ -1,1 +1,319 @@
-this is where my code goes
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+DRY_RUN=false
+DRY_RUN_PACKAGE_MANAGER=""
+
+while (($#)); do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        --package-manager)
+            if (($# < 2)); then
+                echo "--package-manager requires apt, dnf, or yum." >&2
+                exit 2
+            fi
+            shift
+            case "$1" in
+                apt|dnf|yum) DRY_RUN_PACKAGE_MANAGER="$1" ;;
+                *)
+                    echo "Unsupported package manager: $1 (choose apt, dnf, or yum)." >&2
+                    exit 2
+                    ;;
+            esac
+            ;;
+        --help|-h)
+            printf 'Usage: %s [--dry-run [--package-manager apt|dnf|yum]] [--help]\n' "$0"
+            printf 'Update packages and install/start Nginx on Debian/Ubuntu or Fedora/RHEL-family Linux.\n'
+            printf 'Use --package-manager with --dry-run to preview Linux commands on another operating system.\n'
+            exit 0
+            ;;
+        *)
+            printf 'Unknown option: %s\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [[ -n "$DRY_RUN_PACKAGE_MANAGER" && "$DRY_RUN" != true ]]; then
+    echo "--package-manager can only be used with --dry-run." >&2
+    exit 2
+fi
+
+# Server Setup Script
+# -Updates the system packages
+# -Installs Nginx and its package-managed dependencies
+# -Enables and starts the Nginx service
+
+echo "------------------------------------"
+echo " Starting server setup..."
+echo "------------------------------------"
+
+# ------------------------------------
+#1. Check that the script is running as root or with sudo
+# ------------------------------------
+
+if [[ "$DRY_RUN" != true && "$EUID" -ne 0 ]]; then
+    echo "This script must be run as root or with sudo."
+    echo "Example: sudo bash setup-server.sh"
+    exit 1
+fi
+
+#------------------------------------
+#2. Identify the Linux distribution and package manager
+#------------------------------------
+ echo "Identifying Linux distribution..."
+if [[ -n "$DRY_RUN_PACKAGE_MANAGER" ]]; then
+    PACKAGE_MANAGER="$DRY_RUN_PACKAGE_MANAGER"
+else
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        source /etc/os-release
+    else
+        echo "Cannot identify this Linux distribution (/etc/os-release is missing)."
+        echo "For a preview on another OS, use --dry-run --package-manager apt|dnf|yum."
+        exit 1
+    fi
+
+    case "${ID:-}:${ID_LIKE:-}" in
+        ubuntu:*|debian:*|linuxmint:*|pop:*|raspbian:*|*:*debian*)
+            PACKAGE_MANAGER="apt"
+            ;;
+        fedora:*|rhel:*|centos:*|rocky:*|almalinux:*|ol:*|*:*rhel*|*:*fedora*)
+            if command -v dnf >/dev/null 2>&1; then
+                PACKAGE_MANAGER="dnf"
+            elif command -v yum >/dev/null 2>&1; then
+                PACKAGE_MANAGER="yum"
+            else
+                echo "No supported package manager found (dnf or yum)." >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Unsupported Linux distribution: ${PRETTY_NAME:-${ID:-unknown}}" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ "$PACKAGE_MANAGER" == "apt" ]] && ! command -v apt-get >/dev/null 2>&1; then
+        echo "No supported package manager found (apt-get)." >&2
+        exit 1
+    fi
+fi
+
+#------------------------------------
+#3. Define functions for logging and running commands
+#------------------------------------
+
+log() {
+    echo "[INFO] $1"
+}
+error() {
+    echo "[ERROR] $1" >&2
+}
+run() {
+    if [[ "$DRY_RUN" == true ]]; then
+        log "Dry run: $*"
+    else
+        "$@"
+    fi
+}
+
+#------------------------------------
+#4. Update the system and install Nginx
+#------------------------------------
+
+echo "[1/4] Updating system packages and installing Nginx..."
+
+if [[ "$PACKAGE_MANAGER" == apt ]]; then
+    log 'Refreshing package indexes'
+    run apt-get update
+    log 'Upgrading installed packages'
+    run apt-get upgrade -y
+    log 'Installing Nginx and its dependencies'
+    run apt-get install -y nginx
+else
+    log 'Upgrading installed packages'
+    run "$PACKAGE_MANAGER" -y upgrade
+    log 'Installing Nginx and its dependencies'
+    run "$PACKAGE_MANAGER" -y install nginx
+fi
+
+if command -v systemctl >/dev/null 2>&1 || [[ "$DRY_RUN" == true ]]; then
+    log 'Enabling and starting Nginx'
+    run systemctl enable --now nginx
+else
+    printf "\nNginx was installed, but systemctl is unavailable; start Nginx using this system's init manager.\n"
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+    log 'Dry run complete; no changes were made'
+else
+    log 'Server setup complete'
+    printf 'Nginx is installed. Check its status with: systemctl status nginx\n'
+    if [[ -f /var/run/reboot-required ]]; then
+        printf 'A reboot is recommended to finish applying updates.\n'
+    fi
+fi#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+DRY_RUN=false
+DRY_RUN_PACKAGE_MANAGER=""
+
+while (($#)); do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        --package-manager)
+            if (($# < 2)); then
+                echo "--package-manager requires apt, dnf, or yum." >&2
+                exit 2
+            fi
+            shift
+            case "$1" in
+                apt|dnf|yum) DRY_RUN_PACKAGE_MANAGER="$1" ;;
+                *)
+                    echo "Unsupported package manager: $1 (choose apt, dnf, or yum)." >&2
+                    exit 2
+                    ;;
+            esac
+            ;;
+        --help|-h)
+            printf 'Usage: %s [--dry-run [--package-manager apt|dnf|yum]] [--help]\n' "$0"
+            printf 'Update packages and install/start Nginx on Debian/Ubuntu or Fedora/RHEL-family Linux.\n'
+            printf 'Use --package-manager with --dry-run to preview Linux commands on another operating system.\n'
+            exit 0
+            ;;
+        *)
+            printf 'Unknown option: %s\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [[ -n "$DRY_RUN_PACKAGE_MANAGER" && "$DRY_RUN" != true ]]; then
+    echo "--package-manager can only be used with --dry-run." >&2
+    exit 2
+fi
+
+# Server Setup Script
+# -Updates the system packages
+# -Installs Nginx and its package-managed dependencies
+# -Enables and starts the Nginx service
+
+echo "------------------------------------"
+echo " Starting server setup..."
+echo "------------------------------------"
+
+# ------------------------------------
+#1. Check that the script is running as root or with sudo
+# ------------------------------------
+
+if [[ "$DRY_RUN" != true && "$EUID" -ne 0 ]]; then
+    echo "This script must be run as root or with sudo."
+    echo "Example: sudo bash setup-server.sh"
+    exit 1
+fi
+
+#------------------------------------
+#2. Identify the Linux distribution and package manager
+#------------------------------------
+ echo "Identifying Linux distribution..."
+if [[ -n "$DRY_RUN_PACKAGE_MANAGER" ]]; then
+    PACKAGE_MANAGER="$DRY_RUN_PACKAGE_MANAGER"
+else
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        source /etc/os-release
+    else
+        echo "Cannot identify this Linux distribution (/etc/os-release is missing)."
+        echo "For a preview on another OS, use --dry-run --package-manager apt|dnf|yum."
+        exit 1
+    fi
+
+    case "${ID:-}:${ID_LIKE:-}" in
+        ubuntu:*|debian:*|linuxmint:*|pop:*|raspbian:*|*:*debian*)
+            PACKAGE_MANAGER="apt"
+            ;;
+        fedora:*|rhel:*|centos:*|rocky:*|almalinux:*|ol:*|*:*rhel*|*:*fedora*)
+            if command -v dnf >/dev/null 2>&1; then
+                PACKAGE_MANAGER="dnf"
+            elif command -v yum >/dev/null 2>&1; then
+                PACKAGE_MANAGER="yum"
+            else
+                echo "No supported package manager found (dnf or yum)." >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Unsupported Linux distribution: ${PRETTY_NAME:-${ID:-unknown}}" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ "$PACKAGE_MANAGER" == "apt" ]] && ! command -v apt-get >/dev/null 2>&1; then
+        echo "No supported package manager found (apt-get)." >&2
+        exit 1
+    fi
+fi
+
+#------------------------------------
+#3. Define functions for logging and running commands
+#------------------------------------
+
+log() {
+    echo "[INFO] $1"
+}
+error() {
+    echo "[ERROR] $1" >&2
+}
+run() {
+    if [[ "$DRY_RUN" == true ]]; then
+        log "Dry run: $*"
+    else
+        "$@"
+    fi
+}
+
+#------------------------------------
+#4. Update the system and install Nginx
+#------------------------------------
+
+echo "[1/4] Updating system packages and installing Nginx..."
+
+if [[ "$PACKAGE_MANAGER" == apt ]]; then
+    log 'Refreshing package indexes'
+    run apt-get update
+    log 'Upgrading installed packages'
+    run apt-get upgrade -y
+    log 'Installing Nginx and its dependencies'
+    run apt-get install -y nginx
+else
+    log 'Upgrading installed packages'
+    run "$PACKAGE_MANAGER" -y upgrade
+    log 'Installing Nginx and its dependencies'
+    run "$PACKAGE_MANAGER" -y install nginx
+fi
+
+if command -v systemctl >/dev/null 2>&1 || [[ "$DRY_RUN" == true ]]; then
+    log 'Enabling and starting Nginx'
+    run systemctl enable --now nginx
+else
+    printf "\nNginx was installed, but systemctl is unavailable; start Nginx using this system's init manager.\n"
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+    log 'Dry run complete; no changes were made'
+else
+    log 'Server setup complete'
+    printf 'Nginx is installed. Check its status with: systemctl status nginx\n'
+    if [[ -f /var/run/reboot-required ]]; then
+        printf 'A reboot is recommended to finish applying updates.\n'
+    fi
+fi
